@@ -1,5 +1,9 @@
 # 解压缩工具 · Archive Unpacker
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)
+![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
+
 macOS 上的拖拽式解压缩工具。核心解决三件事：
 
 1. **扩展名可以是假的** —— 按文件头魔数识别真实格式（`.7z` 实为 RAR5、`.rar` 实为 tar.gz 都能认）
@@ -23,8 +27,8 @@ macOS 原生外观（aqua 主题 + 系统 UI 字体），浅色/深色自动跟�
 ## 快速开始
 
 ```bash
-git clone https://github.com/zwm521gmailcom/mac-解压缩工具.git
-cd mac-解压缩工具
+git clone https://github.com/zwm521gmailcom/mac-archive-unpacker.git
+cd mac-archive-unpacker
 
 # 仅需标准库；图形界面建议配好较新的 Tk（见下方「图形界面依赖」）
 brew install python-tk@3.12        # 可选但推荐：Tk 9.1，系统自带的是 2009 年的 Tk 8.5
