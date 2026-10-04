@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 验收/调试临时产物（可随时重新生成；README 用的两张截图要保留）
+ui_shot.png
+ui_shot_check.png
+ui_shot_*.tmp.png
+*.log
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# 解压产物（防止误提交到仓库）
+/output/
+/extracted/
