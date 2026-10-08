@@ -16,10 +16,11 @@ struct ArchiveJob: Identifiable, Hashable {
 
 final class UnpackModel: ObservableObject {
     @Published var mode: WorkMode = .extract
+    @Published var compressFormat: CompressFormat = .zip
     @Published var jobs: [ArchiveJob] = []
     @Published var selected: Set<UUID> = []
     @Published var password = ""
-    @Published var log = "把压缩包拖到窗口里，或点「添加文件」。留空密码时会按内置密码本自动尝试。"
+    @Published var log = UnpackModel.extractHint
     @Published var busy = false
     @Published var activity = ""
     @Published var progress = ""
@@ -32,9 +33,7 @@ final class UnpackModel: ObservableObject {
         self.mode = mode
         jobs.removeAll()
         selected.removeAll()
-        log = mode == .extract
-            ? "把压缩包拖到窗口里，或点「添加文件」。留空密码时会按内置密码本自动尝试。"
-            : "把要压缩的文件或文件夹拖进来。留空密码会生成普通 zip，填写后会加密。"
+        log = mode == .extract ? UnpackModel.extractHint : UnpackModel.compressHint
     }
 
     func add(urls: [URL]) {
@@ -92,7 +91,7 @@ final class UnpackModel: ObservableObject {
         if added == 0 {
             appendLog("没有可压缩的文件。")
         } else {
-            appendLog("加入 \(added) 项，将打成一个 zip。")
+            appendLog("加入 \(added) 项，将打成一个 \(compressFormat.title)。")
         }
     }
 
@@ -197,6 +196,7 @@ final class UnpackModel: ObservableObject {
         let sources = jobs.map(\.url)
         let ids = jobs.map(\.id)
         let password = password
+        let format = compressFormat
         let session = UnpackCancel()
         self.session = session
         DispatchQueue.global(qos: .userInitiated).async {
@@ -204,7 +204,7 @@ final class UnpackModel: ObservableObject {
                 for id in ids { self.mark(id, "压缩中") }
                 self.showActivity("正在压缩")
             }
-            let outcome = UnpackEngine.compress(sources: sources, password: password, cancel: session) { event in
+            let outcome = UnpackEngine.compress(sources: sources, password: password, format: format, cancel: session) { event in
                 DispatchQueue.main.async {
                     switch event {
                     case .log(let line):
@@ -261,6 +261,9 @@ final class UnpackModel: ObservableObject {
         log += "\n" + line
     }
 
+    static let extractHint = "把压缩包拖到窗口里，或点「添加文件」。可以解压 RAR、RAR5、7z、ZIP、tar.gz、tar.bz2、tar.xz、GZip、BZip2、XZ、Zstandard、Lzip、CAB、ARJ、ISO。留空密码时会按内置密码本自动尝试。"
+    static let compressHint = "把要压缩的文件或文件夹拖进来。可以打成 ZIP、7z、tar.gz、tar.bz2、tar.xz。ZIP 可以加密，7z 和 tar 系列不能加密码。"
+
     private func showActivity(_ text: String) {
         activity = text
         NSApp.mainWindow?.title = text.isEmpty ? "解压缩工具" : "解压缩工具 · \(text)"
@@ -293,6 +296,7 @@ struct PasswordField: NSViewRepresentable {
 
     func updateNSView(_ field: PasteTextField, context: Context) {
         context.coordinator.text = $text
+        field.placeholderString = placeholder
         field.isEnabled = context.environment.isEnabled
         if field.currentEditor() == nil, field.stringValue != text {
             field.stringValue = text
@@ -377,6 +381,15 @@ struct RootView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 140)
                 .disabled(model.busy)
+                if model.mode == .compress {
+                    Picker("格式", selection: $model.compressFormat) {
+                        ForEach(CompressFormat.allCases, id: \.self) { format in
+                            Text(format.title).tag(format)
+                        }
+                    }
+                    .frame(width: 110)
+                    .disabled(model.busy)
+                }
                 Button("添加文件") { pick(files: true) }
                 Button("添加文件夹") { pick(files: false) }
                 Button("移除") { model.removeSelected() }
@@ -398,7 +411,7 @@ struct RootView: View {
                 Text("密码")
                 PasswordField(
                     text: $model.password,
-                    placeholder: model.mode == .compress ? "留空则不加密" : "留空则自动尝试密码本"
+                    placeholder: passwordPlaceholder
                 )
                     .disabled(model.busy)
                     .frame(height: 24)
@@ -449,7 +462,7 @@ struct RootView: View {
                 Button("在访达中显示所选") { model.revealSelection() }
                     .disabled(model.jobs.isEmpty)
                 Spacer()
-                Text(model.mode == .compress ? "打成一个 zip，放在这些文件旁边" : "输出在压缩包旁边的同名文件夹")
+                Text(model.mode == .compress ? "打成一个压缩包，放在这些文件旁边" : "输出在压缩包旁边的同名文件夹")
                     .foregroundStyle(.secondary)
             }
         }
@@ -460,12 +473,19 @@ struct RootView: View {
         }
     }
 
+    private var passwordPlaceholder: String {
+        if model.mode == .extract { return "留空则自动尝试密码本" }
+        if model.compressFormat.allowsPassword { return "留空则不加密" }
+        return "这个格式不能加密"
+    }
+
     private func pick(files: Bool) {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
         panel.canChooseFiles = files
         panel.canChooseDirectories = !files
         panel.prompt = "添加"
+        panel.message = model.mode == .extract ? UnpackModel.extractHint : UnpackModel.compressHint
         guard panel.runModal() == .OK else { return }
         model.add(urls: panel.urls)
     }

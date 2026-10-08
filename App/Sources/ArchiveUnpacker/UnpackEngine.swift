@@ -92,6 +92,32 @@ enum UnpackNote {
     case activity(String)
 }
 
+enum CompressFormat: String, CaseIterable {
+    case zip, sevenz, tarGz, tarBz2, tarXz
+
+    var title: String {
+        switch self {
+        case .zip: return "ZIP"
+        case .sevenz: return "7z"
+        case .tarGz: return "tar.gz"
+        case .tarBz2: return "tar.bz2"
+        case .tarXz: return "tar.xz"
+        }
+    }
+
+    var fileExtension: String {
+        switch self {
+        case .zip: return "zip"
+        case .sevenz: return "7z"
+        case .tarGz: return "tar.gz"
+        case .tarBz2: return "tar.bz2"
+        case .tarXz: return "tar.xz"
+        }
+    }
+
+    var allowsPassword: Bool { self == .zip }
+}
+
 enum UnpackEngine {
     private static let defaults = [
         "oldmanemu.net", "www.oldmanemu.net", "oldmanemu",
@@ -297,6 +323,7 @@ enum UnpackEngine {
     static func compress(
         sources: [URL],
         password: String,
+        format: CompressFormat = .zip,
         cancel: UnpackCancel? = nil,
         note: @escaping (UnpackNote) -> Void
     ) -> ExtractOutcome {
@@ -304,26 +331,18 @@ enum UnpackEngine {
         guard !existing.isEmpty else {
             return ExtractOutcome(ok: false, detail: "没有可压缩的文件", destination: nil, passwordUsed: nil, unlockedWithoutPassword: false)
         }
+        let typed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !typed.isEmpty, !format.allowsPassword {
+            return ExtractOutcome(ok: false, detail: "\(format.title) 不能加密码，请留空，或改用 ZIP", destination: nil, passwordUsed: nil, unlockedWithoutPassword: false)
+        }
         guard let input = zipInput(for: existing) else {
             return ExtractOutcome(ok: false, detail: "这些文件分散在不同文件夹，无法集中", destination: nil, passwordUsed: nil, unlockedWithoutPassword: false)
         }
         defer { input.cleanup?() }
-        let dest = availableZip(for: existing)
-        let typed = password.trimmingCharacters(in: .whitespacesAndNewlines)
+        let dest = availableArchive(for: existing, format: format)
         note(.log("压缩 \(existing.count) 项 → \(dest.lastPathComponent)"))
         note(.activity(typed.isEmpty ? "正在压缩" : "正在加密压缩"))
-        var args = ["-r"]
-        if input.keepLinks { args.append("-y") }
-        if !typed.isEmpty { args += ["-P", typed] }
-        args.append(dest.path)
-        args += input.names
-        let result = run(
-            bin: "/usr/bin/zip",
-            args: args,
-            cwd: input.directory,
-            cancel: cancel,
-            measure: { fileSize(dest) }
-        ) { bytes in
+        let result = compressProcess(format: format, input: input, dest: dest, password: typed, cancel: cancel) { bytes in
             note(.activity("已写入 \(formatBytes(bytes))"))
         }
         if cancel?.isStopped == true {
@@ -331,7 +350,7 @@ enum UnpackEngine {
             return cancelledOutcome()
         }
         if result.code == 0, fileSize(dest) > 0 {
-            let detail = typed.isEmpty ? "已生成 zip" : "已生成加密 zip"
+            let detail = typed.isEmpty ? "已生成 \(format.title)" : "已生成加密 \(format.title)"
             return ExtractOutcome(ok: true, detail: detail, destination: dest, passwordUsed: typed.isEmpty ? nil : typed, unlockedWithoutPassword: typed.isEmpty)
         }
         try? FileManager.default.removeItem(at: dest)
@@ -377,13 +396,39 @@ enum UnpackEngine {
         }
     }
 
-    private static func availableZip(for sources: [URL]) -> URL {
+    private static func compressProcess(
+        format: CompressFormat,
+        input: ZipInput,
+        dest: URL,
+        password: String,
+        cancel: UnpackCancel?,
+        onBytes: @escaping (Int64) -> Void
+    ) -> (code: Int32, text: String) {
+        switch format {
+        case .zip:
+            var args = ["-r"]
+            if input.keepLinks { args.append("-y") }
+            if !password.isEmpty { args += ["-P", password] }
+            args.append(dest.path)
+            args += input.names
+            return run(bin: "/usr/bin/zip", args: args, cwd: input.directory, cancel: cancel, measure: { fileSize(dest) }, onBytes: onBytes)
+        case .sevenz, .tarGz, .tarBz2, .tarXz:
+            let args = ["-a", "-c", "-L", "-f", dest.path] + input.names
+            return run(bin: "/usr/bin/bsdtar", args: args, cwd: input.directory, cancel: cancel, measure: { fileSize(dest) }, onBytes: onBytes)
+        }
+    }
+
+    private static func availableArchive(for sources: [URL], format: CompressFormat) -> URL {
         let parent = sources[0].deletingLastPathComponent()
         let stem = sources.count == 1 ? sources[0].lastPathComponent : "归档"
-        var dest = parent.appendingPathComponent(stem).appendingPathExtension("zip")
+        func named(_ suffix: String) -> URL {
+            parent.appendingPathComponent(stem + suffix)
+        }
+        let ext = "." + format.fileExtension
+        var dest = named(ext)
         var index = 2
         while FileManager.default.fileExists(atPath: dest.path) {
-            dest = parent.appendingPathComponent("\(stem)-\(index)").appendingPathExtension("zip")
+            dest = named("-\(index)" + ext)
             index += 1
         }
         return dest
@@ -478,6 +523,14 @@ enum UnpackEngine {
             guard made.ok, let madeZip = made.destination, sniff(url: madeZip) == .zip else {
                 try? fm.removeItem(at: root)
                 fputs("压缩自检失败 \(made.detail)\n", stderr)
+                return 1
+            }
+            let gz = compress(sources: [src], password: "", format: .tarGz) { _ in }
+            let seven = compress(sources: [src], password: "", format: .sevenz) { _ in }
+            guard gz.ok, let gzURL = gz.destination, sniff(url: gzURL) == .gzip,
+                  seven.ok, let sevenURL = seven.destination, sniff(url: sevenURL) == .sevenz else {
+                try? fm.removeItem(at: root)
+                fputs("tar.gz 或 7z 压缩失败 \(gz.detail) \(seven.detail)\n", stderr)
                 return 1
             }
             let secretFile = src.appendingPathComponent("你好.txt")
