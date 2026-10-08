@@ -11,6 +11,11 @@ ui_shot_check.png
 ui_shot_*.tmp.png
 *.log
 
+# 打包产物
+解压缩工具.app/
+解压缩工具.ready.app/
+App/.build/
+
 # macOS
 .DS_Store
 ._*
