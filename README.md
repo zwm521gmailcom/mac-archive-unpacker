@@ -4,6 +4,21 @@ macOS 上双击即可使用的解压和压缩工具。窗口可以拖入文件�
 
 它按文件头识别真实格式，所以扩展名对不上也能解开，例如名叫 `.7z`、实际是 RAR5 的包。解压时会把结果放到压缩包旁边的同名文件夹，并写出 SHA256 清单。压缩则把选中的文件打成一个 zip。
 
+## 支持的格式
+
+识别看文件头，不看扩展名。
+
+| 格式 | 解压 | 压缩 |
+| --- | --- | --- |
+| RAR、RAR5 | 可以，包括加密包 | 不可以 |
+| 7z | 可以，包括加密包 | 不可以 |
+| ZIP | 可以，包括加密包 | 可以。密码留空是普通 zip，填写后加密 |
+| TAR，以及 `.tar.gz`、`.tgz`、`.tar.bz2`、`.tar.xz`、`.tar.zst`、`.tar.lz` | 可以 | 不可以 |
+| GZip、BZip2、XZ、Zstandard、Lzip | 可以 | 不可以 |
+| CAB、ARJ、ISO | 可以 | 不可以 |
+
+RAR、RAR5、7z、ZIP、CAB、ARJ、ISO 用打进应用里的 unar 解压。TAR 以及 GZip、BZip2、XZ、Zstandard、Lzip 先用系统的 bsdtar。压缩只用系统的 zip，不能生成 RAR 或 7z。
+
 ## 运行环境
 
 macOS 14 或更高版本，以及 Swift 命令行工具。打包时还需要本机已安装 [The Unarchiver 的命令行工具](https://theunarchiver.com/)：
@@ -52,8 +67,6 @@ App/.build/release/ArchiveUnpacker --self-test
 1. 把文件或文件夹拖进来，或点「添加文件」「添加文件夹」。多项会打成同一个 zip。
 2. 密码留空则是普通 zip。填写后会加密，之后仍可以用本工具解开。
 3. 点「开始压缩」。只有一项时，zip 用该项的名字；多项时叫 `归档.zip`。已经有同名文件时会加上 `-2`。zip 放在这些文件旁边。
-
-这里生成的是 zip。RAR 和 7z 可以解，不能在这里生成。
 
 ## 密码本
 
